@@ -1,93 +1,190 @@
+import 'dart:math';
+import 'dart:typed_data';
+
 import 'package:better_than_mice/classes/MapAPI.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
 
 class Map extends StatefulWidget {
-  final MapAPI mapAPI;
-  Map({Key key, @required this.mapAPI}) : super(key: key);
+  final TurtleBotAPI turtleBotAPI;
+  final int currentX;
+  final int currentY;
+  Map({
+    Key key,
+    @required this.turtleBotAPI,
+    @required this.currentX,
+    @required this.currentY,
+  }) : super(key: key);
 
   @override
   _MapState createState() => _MapState();
 }
 
 class _MapState extends State<Map> {
-  MapAPI mapAPI;
-  List<List<int>> gridState = [
-    [100, 100],
-    [100, 100]
-  ];
+  TurtleBotAPI turtleBotAPI;
+  List<int> gridState = [];
+  Widget mapImage;
+  int currentX;
+  int currentY;
 
   @override
   void initState() {
-    mapAPI = widget.mapAPI;
+    turtleBotAPI = widget.turtleBotAPI;
+    currentX = widget.currentX;
+    currentY = widget.currentY;
     startTimer();
     super.initState();
   }
 
   void startTimer() {
-    const oneSec = const Duration(seconds: 1);
+    const oneSec = const Duration(seconds: 2);
     new Timer.periodic(oneSec, (timer) async {
-      List<List<int>> newGridState = await mapAPI.getMap();
-      updateGridState(newGridState);
+      turtleBotAPI.getMap().then((value) => updateGridState(value));
     });
   }
 
-  void updateGridState(List<List<int>> newGridState) {
-    setState(() {
-      gridState = newGridState;
-    });
+  void updateGridState(List<int> newGridState) {
+    print(newGridState);
+    if (newGridState.length > 0) {
+      BMP332Header header = BMP332Header(
+          sqrt(newGridState.length).round(), sqrt(newGridState.length).round());
+      Uint8List bmp = header.appendBitmap(Uint8List.fromList(newGridState));
+      Image newImage = Image.memory(
+        bmp,
+        width: 1000,
+      );
+      setState(() {
+        gridState = newGridState;
+        mapImage = newImage;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    Widget _buildGridItem(int x, int y) {
-      int greyScale = gridState[x][y] ~/ 2;
-      return Container(
-        color: Color.fromARGB(greyScale, 0, 0, 0),
-      );
-    }
+    double _turtleBotWidth = 20.0;
+    double _width = sqrt(gridState.length);
+    double _height = sqrt(gridState.length);
+    int _currentX = widget.currentX;
+    int _currentY = widget.currentY;
 
-    _gridItemTapped(int x, int y) {
-      print('$x, $y');
-    }
+    _width = 384;
+    _height = 384;
+    _currentX = 5;
+    _currentY = 14;
 
-    Widget _buildGridItems(BuildContext context, int index) {
-      int gridStateLength = gridState.length;
-      int x, y = 0;
-      x = (index / gridStateLength).floor();
-      y = (index % gridStateLength);
-      return GestureDetector(
-        onTap: () => _gridItemTapped(x, y),
-        child: GridTile(
-          child: Container(
-            child: Center(
-              child: _buildGridItem(x, y),
-            ),
-          ),
-        ),
-      );
-    }
-
-    Widget _buildGameBody() {
-      int gridStateLength = gridState.length;
-      return Column(children: <Widget>[
-        AspectRatio(
-          aspectRatio: 1.0,
-          child: Container(
-            padding: const EdgeInsets.all(8.0),
-            margin: const EdgeInsets.all(8.0),
-            child: GridView.builder(
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: gridStateLength,
+    // print(sqrt(gridState.length).round());
+    _currentX += (_width ~/ 2);
+    _currentY += (_height ~/ 2);
+    return ClipRRect(
+      borderRadius: BorderRadius.all(
+        Radius.circular(20.0),
+      ),
+      child: (_width == 0 || _height == 0)
+          ? Center(
+              child: Text(
+                "Loading map...",
+                style: TextStyle(color: Colors.black45, fontSize: 20),
               ),
-              itemBuilder: _buildGridItems,
-              itemCount: gridStateLength * gridStateLength,
+            )
+          : Container(
+              width: _width,
+              height: _height,
+              child: Stack(
+                children: [
+                  Center(
+                    child: Container(
+                      width: _width,
+                      height: _height,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(20.0),
+                        border: Border.all(
+                          width: 2.0,
+                          color: Colors.black45,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Center(
+                    child: (mapImage == null) ? Container() : mapImage,
+                  ),
+                  Transform.translate(
+                    offset: Offset(_currentX - (_turtleBotWidth / 2),
+                        _currentY - (_turtleBotWidth / 2)),
+                    child: Image(
+                      height: _turtleBotWidth,
+                      image: AssetImage(
+                        'lib/assets/icons/mouse_icon.png',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ),
-      ]);
-    }
 
-    return _buildGameBody();
+      // Transform.rotate(
+      //   angle: pi * 1.8,
+      //   child: Transform.translate(
+      //     offset: Offset(30, 100),
+      //     child: Transform.scale(
+      //       scale: 7,
+      //       child: (mapImage == null) ? Container() : mapImage,
+      //     ),
+      //   ),
+      // ),
+    );
+  }
+}
+
+class BMP332Header {
+  int _width; // NOTE: width must be multiple of 4 as no account is made for bitmap padding
+  int _height;
+
+  Uint8List _bmp;
+  int _totalHeaderSize;
+
+  BMP332Header(this._width, this._height) : assert(_width & 3 == 0) {
+    int baseHeaderSize = 54;
+    _totalHeaderSize = baseHeaderSize + 1024; // base + color map
+    int fileLength = _totalHeaderSize + _width * _height; // header + bitmap
+    _bmp = new Uint8List(fileLength);
+    ByteData bd = _bmp.buffer.asByteData();
+    bd.setUint8(0, 0x42);
+    bd.setUint8(1, 0x4d);
+    bd.setUint32(2, fileLength, Endian.little); // file length
+    bd.setUint32(10, _totalHeaderSize, Endian.little); // start of the bitmap
+    bd.setUint32(14, 40, Endian.little); // info header size
+    bd.setUint32(18, _width, Endian.little);
+    bd.setUint32(22, _height, Endian.little);
+    bd.setUint16(26, 1, Endian.little); // planes
+    bd.setUint32(28, 8, Endian.little); // bpp
+    bd.setUint32(30, 0, Endian.little); // compression
+    bd.setUint32(34, _width * _height, Endian.little); // bitmap size
+    // leave everything else as zero
+
+    // there are 256 possible variations of pixel
+    // build the indexed color map that maps from packed byte to RGBA32
+    // better still, create a lookup table see: http://unwind.se/bgr233/
+    for (int rgb = 0; rgb < 256; rgb++) {
+      int offset = baseHeaderSize + rgb * 4;
+
+      int red = rgb & 0xe0;
+      int green = rgb & 0xe0;
+      int blue = rgb & 0xe0;
+
+      bd.setUint8(offset + 3, 255); // A
+      bd.setUint8(offset + 2, red); // R
+      bd.setUint8(offset + 1, green); // G
+      bd.setUint8(offset, blue); // B
+    }
+  }
+
+  /// Insert the provided bitmap after the header and return the whole BMP
+  Uint8List appendBitmap(Uint8List bitmap) {
+    int size = _width * _height;
+    assert(bitmap.length == size);
+    _bmp.setRange(_totalHeaderSize, _totalHeaderSize + size, bitmap);
+    return _bmp;
   }
 }

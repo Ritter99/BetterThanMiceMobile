@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:better_than_mice/classes/MapAPI.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -13,7 +15,8 @@ enum MappingState {
   PathFound
 }
 
-String ipAddress = '10.11.1.184';
+// String ipAddress = '10.11.1.184';
+String ipAddress = '10.7.201.15';
 int portNumber = 5140;
 
 void main() {
@@ -45,13 +48,13 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  double xPosition = 0.0;
-  double yPosition = 0.0;
+  int xPosition = 0;
+  int yPosition = 0;
   MappingState currentMappingState = MappingState.Disconnected;
   List<Widget> bottomButtonList = [];
-  final MapAPI mapApi = new MapAPI();
+  final TurtleBotAPI turtleBotAPI = new TurtleBotAPI();
 
-  void updateCoordinates(double newX, double newY) {
+  void updateCoordinates(int newX, int newY) {
     setState(() {
       xPosition = newX;
       yPosition = newY;
@@ -73,51 +76,38 @@ class _MyHomePageState extends State<MyHomePage> {
           onTap: () {
             print('Begin mapping');
             setMappingState(MappingState.Mapping);
+            turtleBotAPI.startWallFollower();
           },
         ),
       ];
     } else if (currentMappingState == MappingState.Mapping) {
       bottomButtonList = [
+        // CustomButton(
+        //   title: 'Pause Mapping',
+        //   color: Colors.orange[300],
+        //   onTap: () {
+        //     print('Pause mapping');
+        //     setMappingState(MappingState.PausedMapping);
+        //   },
+        // ),
+        // Container(height: 16),
+        // CustomButton(
+        //   title: 'Stop Mapping',
+        //   color: Colors.red[300],
+        //   onTap: () {
+        //     print('Stop mapping');
+        //     setMappingState(MappingState.Start);
+        //     turtleBotAPI.stopWallFollower();
+        //   },
+        // ),
+        // Container(height: 16),
         CustomButton(
-          title: 'Pause Mapping',
-          color: Colors.orange[300],
+          title: 'Finish Mapping',
+          color: Colors.yellow[600],
           onTap: () {
-            print('Pause mapping');
-            setMappingState(MappingState.PausedMapping);
-          },
-        ),
-        Container(height: 16),
-        CustomButton(
-          title: 'Stop Mapping',
-          color: Colors.red[300],
-          onTap: () {
-            print('Stop mapping');
-            setMappingState(MappingState.Start);
-          },
-        ),
-        Container(height: 16),
-        Row(
-          children: [
-            CustomButton(
-              title: 'Finish Mapping',
-              color: Colors.yellow[600],
-              onTap: () {
-                print('Finish mapping');
-                setMappingState(MappingState.FinishedMapping);
-              },
-            ),
-            Text('<- Temp!')
-          ],
-        ),
-      ];
-    } else if (currentMappingState == MappingState.PausedMapping) {
-      bottomButtonList = [
-        CustomButton(
-          title: 'Resume Mapping',
-          color: Colors.tealAccent[400],
-          onTap: () {
-            print('Resume mapping');
-            setMappingState(MappingState.Mapping);
+            print('Finish mapping');
+            setMappingState(MappingState.FinishedMapping);
+            turtleBotAPI.stopWallFollower();
           },
         ),
       ];
@@ -129,27 +119,11 @@ class _MyHomePageState extends State<MyHomePage> {
         ),
         Container(height: 16),
         CustomButton(
-          title: 'Find Path',
+          title: 'Done',
           color: Colors.yellow[600],
           onTap: () {
-            print('Find Path');
-            setMappingState(MappingState.PathFound);
-          },
-        ),
-      ];
-    } else if (currentMappingState == MappingState.PathFound) {
-      bottomButtonList = [
-        Text(
-          'Path Found',
-          style: TextStyle(color: Colors.blue[300], fontSize: 30.0),
-        ),
-        Container(height: 16),
-        CustomButton(
-          title: 'Return to Start',
-          color: Colors.tealAccent[400],
-          onTap: () {
-            print('Return to Start');
-            setMappingState(MappingState.Mapping);
+            print('Done');
+            setMappingState(MappingState.Start);
           },
         ),
       ];
@@ -160,7 +134,8 @@ class _MyHomePageState extends State<MyHomePage> {
           color: Colors.tealAccent[400],
           onTap: () async {
             print('Connect to API');
-            bool success = await mapApi.testConnection(ipAddress, portNumber);
+            bool success =
+                await turtleBotAPI.testConnection(ipAddress, portNumber);
             if (success) {
               setMappingState(MappingState.Start);
             } else {
@@ -170,6 +145,21 @@ class _MyHomePageState extends State<MyHomePage> {
         ),
       ];
     }
+  }
+
+  @override
+  void initState() {
+    startTimer();
+    super.initState();
+  }
+
+  void startTimer() {
+    const oneSec = const Duration(seconds: 2);
+    new Timer.periodic(oneSec, (timer) async {
+      turtleBotAPI.getCurrentPosition().then((value) {
+        updateCoordinates(value['x'], value['y']);
+      });
+    });
   }
 
   @override
@@ -187,7 +177,7 @@ class _MyHomePageState extends State<MyHomePage> {
             (currentMappingState == MappingState.Disconnected)
                 ? ConnectingScreen()
                 : MappingArea(
-                    mapAPI: mapApi,
+                    mapAPI: turtleBotAPI,
                     xPosition: xPosition,
                     yPosition: yPosition,
                     currentMappingState: currentMappingState),
@@ -252,9 +242,9 @@ class MappingArea extends StatelessWidget {
     @required this.currentMappingState,
   }) : super(key: key);
 
-  final MapAPI mapAPI;
-  final double xPosition;
-  final double yPosition;
+  final TurtleBotAPI mapAPI;
+  final int xPosition;
+  final int yPosition;
   final MappingState currentMappingState;
 
   @override
@@ -273,18 +263,15 @@ class MappingArea extends StatelessWidget {
                   flex: 1,
                   child: Align(
                     alignment: Alignment.centerLeft,
-                    child: Expanded(
-                      child: Row(
-                        children: [
-                          Container(width: 20),
-                          Text(
-                            'Turtle Drone:',
-                            style:
-                                TextStyle(fontSize: 24, color: Colors.black45),
-                            textAlign: TextAlign.start,
-                          ),
-                        ],
-                      ),
+                    child: Row(
+                      children: [
+                        Container(width: 20),
+                        Text(
+                          'Turtle Bot Position:',
+                          style: TextStyle(fontSize: 24, color: Colors.black45),
+                          textAlign: TextAlign.start,
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -311,57 +298,11 @@ class MappingArea extends StatelessWidget {
           ),
           Expanded(
             flex: 4,
-            child: Container(
-              width: MediaQuery.of(context).size.width * 0.9,
-              decoration: BoxDecoration(
-                color: Colors.black12,
-                borderRadius: BorderRadius.circular(20.0),
-                border: Border.all(
-                  width: 2.0,
-                  color: Colors.black45,
-                ),
-              ),
-              child: Stack(
-                children: [
-                  Align(
-                    alignment: Alignment(0.0, 0.8),
-                    child: Text(
-                      'Start',
-                      style: TextStyle(color: Colors.black26, fontSize: 30.0),
-                    ),
-                  ),
-                  Align(
-                    alignment: Alignment(0.0, 0.8),
-                    child: Image(
-                      height: 40.0,
-                      image: AssetImage(
-                        'lib/assets/icons/mouse_icon.png',
-                      ),
-                    ),
-                  ),
-                  Map(mapAPI: mapAPI),
-                  Center(
-                    child: (currentMappingState == MappingState.FinishedMapping)
-                        ? Opacity(
-                            opacity: 0.5,
-                            child: Container(
-                              width: MediaQuery.of(context).size.width * 0.6,
-                              height: MediaQuery.of(context).size.width * 0.6,
-                              decoration: BoxDecoration(
-                                color: Colors.tealAccent[400],
-                                borderRadius: BorderRadius.circular(
-                                    MediaQuery.of(context).size.width * 0.3),
-                              ),
-                              child: Icon(
-                                Icons.check,
-                                color: Colors.white,
-                                size: MediaQuery.of(context).size.width * 0.5,
-                              ),
-                            ),
-                          )
-                        : Container(),
-                  ),
-                ],
+            child: Center(
+              child: Map(
+                turtleBotAPI: mapAPI,
+                currentX: xPosition,
+                currentY: yPosition,
               ),
             ),
           ),
