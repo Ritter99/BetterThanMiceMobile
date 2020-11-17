@@ -70,10 +70,9 @@ class _MapState extends State<Map> {
 
     _width = 384;
     _height = 384;
-    _currentX = 5;
-    _currentY = 14;
+    // _currentX = -180;
+    // _currentY = 180;
 
-    // print(sqrt(gridState.length).round());
     _currentX += (_width ~/ 2);
     _currentY += (_height ~/ 2);
     return ClipRRect(

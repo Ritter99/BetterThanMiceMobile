@@ -4,6 +4,7 @@ import 'package:better_than_mice/classes/MapAPI.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import './elements/Map.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 enum MappingState {
   Disconnected,
@@ -12,12 +13,13 @@ enum MappingState {
   Mapping,
   PausedMapping,
   FinishedMapping,
-  PathFound
+  PathFound,
 }
 
-// String ipAddress = '10.11.1.184';
-String ipAddress = '10.7.201.15';
-int portNumber = 5140;
+enum ServerConnectionState {
+  Connected,
+  Disconnected,
+}
 
 void main() {
   runApp(MyApp());
@@ -42,17 +44,55 @@ class MyHomePage extends StatefulWidget {
   MyHomePage({Key key, this.title}) : super(key: key);
 
   final String title;
+  final MyHomePageState myHomePageState = MyHomePageState();
 
   @override
-  _MyHomePageState createState() => _MyHomePageState();
+  MyHomePageState createState() {
+    return myHomePageState;
+  }
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int xPosition = 0;
-  int yPosition = 0;
-  MappingState currentMappingState = MappingState.Disconnected;
+class MyHomePageState extends State<MyHomePage> {
+  final storage = new FlutterSecureStorage();
+  int xPosition;
+  int yPosition;
+  MappingState currentMappingState = MappingState.Start;
+  ServerConnectionState serverConnectionState =
+      ServerConnectionState.Disconnected;
   List<Widget> bottomButtonList = [];
-  final TurtleBotAPI turtleBotAPI = new TurtleBotAPI();
+  String ipAddress;
+  int portNumber;
+  TurtleBotAPI turtleBotAPI;
+
+  Future<void> testServer() async {
+    if (turtleBotAPI != null) {
+      bool success = await turtleBotAPI.testConnection();
+      print('Server connected: $success');
+      setState(() {
+        serverConnectionState = (success)
+            ? ServerConnectionState.Connected
+            : ServerConnectionState.Disconnected;
+      });
+    }
+  }
+
+  Future<void> getLocalVariables() async {
+    try {
+      ipAddress = await storage.read(key: 'ipAddress');
+      portNumber = int.parse(await storage.read(key: 'portNumber'));
+      setState(() {
+        turtleBotAPI =
+            new TurtleBotAPI(ipAddress: ipAddress, portNumber: portNumber);
+        currentMappingState = MappingState.Start;
+      });
+    } catch (err) {
+      print(err);
+      setState(() {
+        turtleBotAPI = null;
+        currentMappingState = MappingState.Disconnected;
+      });
+    }
+  }
 
   void updateCoordinates(int newX, int newY) {
     setState(() {
@@ -82,25 +122,6 @@ class _MyHomePageState extends State<MyHomePage> {
       ];
     } else if (currentMappingState == MappingState.Mapping) {
       bottomButtonList = [
-        // CustomButton(
-        //   title: 'Pause Mapping',
-        //   color: Colors.orange[300],
-        //   onTap: () {
-        //     print('Pause mapping');
-        //     setMappingState(MappingState.PausedMapping);
-        //   },
-        // ),
-        // Container(height: 16),
-        // CustomButton(
-        //   title: 'Stop Mapping',
-        //   color: Colors.red[300],
-        //   onTap: () {
-        //     print('Stop mapping');
-        //     setMappingState(MappingState.Start);
-        //     turtleBotAPI.stopWallFollower();
-        //   },
-        // ),
-        // Container(height: 16),
         CustomButton(
           title: 'Finish Mapping',
           color: Colors.yellow[600],
@@ -120,7 +141,7 @@ class _MyHomePageState extends State<MyHomePage> {
         Container(height: 16),
         CustomButton(
           title: 'Done',
-          color: Colors.yellow[600],
+          color: Colors.blue[300],
           onTap: () {
             print('Done');
             setMappingState(MappingState.Start);
@@ -134,9 +155,12 @@ class _MyHomePageState extends State<MyHomePage> {
           color: Colors.tealAccent[400],
           onTap: () async {
             print('Connect to API');
-            bool success =
-                await turtleBotAPI.testConnection(ipAddress, portNumber);
+            turtleBotAPI =
+                new TurtleBotAPI(ipAddress: ipAddress, portNumber: portNumber);
+            bool success = await turtleBotAPI.testConnection();
             if (success) {
+              storage.write(key: 'ipAddress', value: ipAddress);
+              storage.write(key: 'portNumber', value: portNumber.toString());
               setMappingState(MappingState.Start);
             } else {
               print('Error');
@@ -149,16 +173,31 @@ class _MyHomePageState extends State<MyHomePage> {
 
   @override
   void initState() {
-    startTimer();
+    xPosition = 0;
+    yPosition = 0;
+
+    startCoordinatesTimer();
+    startConnectionTimer();
+    testServer();
+    getLocalVariables();
     super.initState();
   }
 
-  void startTimer() {
-    const oneSec = const Duration(seconds: 2);
+  void startCoordinatesTimer() {
+    const oneSec = const Duration(seconds: 1);
     new Timer.periodic(oneSec, (timer) async {
-      turtleBotAPI.getCurrentPosition().then((value) {
-        updateCoordinates(value['x'], value['y']);
-      });
+      if (turtleBotAPI != null) {
+        turtleBotAPI.getCurrentPosition().then((value) {
+          updateCoordinates(value['x'], value['y']);
+        });
+      }
+    });
+  }
+
+  void startConnectionTimer() {
+    const oneSec = const Duration(seconds: 5);
+    new Timer.periodic(oneSec, (timer) async {
+      testServer();
     });
   }
 
@@ -175,12 +214,17 @@ class _MyHomePageState extends State<MyHomePage> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
             (currentMappingState == MappingState.Disconnected)
-                ? ConnectingScreen()
+                ? ConnectingScreen(
+                    myHomePageState: widget.myHomePageState,
+                  )
                 : MappingArea(
                     mapAPI: turtleBotAPI,
                     xPosition: xPosition,
                     yPosition: yPosition,
-                    currentMappingState: currentMappingState),
+                    currentMappingState: currentMappingState,
+                    myHomePageState: widget.myHomePageState,
+                    serverConnectionState: serverConnectionState,
+                  ),
             BottomButtons(bottomButtonList: bottomButtonList),
           ],
         ),
@@ -192,7 +236,10 @@ class _MyHomePageState extends State<MyHomePage> {
 class ConnectingScreen extends StatelessWidget {
   const ConnectingScreen({
     Key key,
+    @required this.myHomePageState,
   }) : super(key: key);
+
+  final MyHomePageState myHomePageState;
 
   @override
   Widget build(BuildContext context) {
@@ -212,7 +259,7 @@ class ConnectingScreen extends StatelessWidget {
               decoration:
                   InputDecoration(labelText: 'IP Address (no http/https)'),
               onChanged: (text) {
-                ipAddress = text;
+                myHomePageState.ipAddress = text;
               },
             ),
             Container(height: 20),
@@ -223,7 +270,7 @@ class ConnectingScreen extends StatelessWidget {
             TextField(
               decoration: InputDecoration(labelText: 'Port Number'),
               onChanged: (text) {
-                portNumber = int.parse(text);
+                myHomePageState.portNumber = int.parse(text);
               },
             ),
           ],
@@ -240,12 +287,16 @@ class MappingArea extends StatelessWidget {
     @required this.xPosition,
     @required this.yPosition,
     @required this.currentMappingState,
+    @required this.myHomePageState,
+    @required this.serverConnectionState,
   }) : super(key: key);
 
+  final MyHomePageState myHomePageState;
   final TurtleBotAPI mapAPI;
   final int xPosition;
   final int yPosition;
   final MappingState currentMappingState;
+  final ServerConnectionState serverConnectionState;
 
   @override
   Widget build(BuildContext context) {
@@ -261,17 +312,64 @@ class MappingArea extends StatelessWidget {
                 Container(height: 10),
                 Expanded(
                   flex: 1,
+                  child: Padding(
+                    padding: EdgeInsets.only(left: 20, right: 20),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Server: http://' +
+                                  myHomePageState.ipAddress +
+                                  ':' +
+                                  myHomePageState.portNumber.toString(),
+                              style: TextStyle(
+                                  color: Colors.black45, fontSize: 16),
+                            ),
+                            Container(width: 8),
+                            Icon(
+                              (serverConnectionState ==
+                                      ServerConnectionState.Disconnected)
+                                  ? Icons.highlight_remove
+                                  : Icons.check_circle_outline,
+                              size: 18,
+                              color: (serverConnectionState ==
+                                      ServerConnectionState.Disconnected)
+                                  ? Colors.red[400]
+                                  : Colors.tealAccent[400],
+                            )
+                          ],
+                        ),
+                        Container(
+                          width: 30,
+                          height: 30,
+                          child: GestureDetector(
+                            child: Icon(
+                              Icons.computer,
+                              color: Colors.black45,
+                            ),
+                            onTap: () => myHomePageState
+                                .setMappingState(MappingState.Disconnected),
+                          ),
+                        )
+                      ],
+                    ),
+                  ),
+                ),
+                Container(height: 10),
+                Expanded(
+                  flex: 1,
                   child: Align(
                     alignment: Alignment.centerLeft,
-                    child: Row(
-                      children: [
-                        Container(width: 20),
-                        Text(
-                          'Turtle Bot Position:',
-                          style: TextStyle(fontSize: 24, color: Colors.black45),
-                          textAlign: TextAlign.start,
-                        ),
-                      ],
+                    child: Padding(
+                      padding: EdgeInsets.only(left: 20, right: 20),
+                      child: Text(
+                        'Turtle Bot Position:',
+                        style: TextStyle(fontSize: 24, color: Colors.black45),
+                        textAlign: TextAlign.start,
+                      ),
                     ),
                   ),
                 ),
@@ -297,12 +395,39 @@ class MappingArea extends StatelessWidget {
             ),
           ),
           Expanded(
-            flex: 4,
+            flex: 2,
             child: Center(
-              child: Map(
-                turtleBotAPI: mapAPI,
-                currentX: xPosition,
-                currentY: yPosition,
+              child: Stack(
+                children: [
+                  Center(
+                    child: Map(
+                      turtleBotAPI: mapAPI,
+                      currentX: xPosition,
+                      currentY: yPosition,
+                    ),
+                  ),
+                  (currentMappingState == MappingState.FinishedMapping)
+                      ? Center(
+                          child: Opacity(
+                            opacity: 0.7,
+                            child: Container(
+                              width: MediaQuery.of(context).size.width * 0.6,
+                              height: MediaQuery.of(context).size.width * 0.6,
+                              decoration: BoxDecoration(
+                                color: Colors.blue[300],
+                                borderRadius: BorderRadius.all(Radius.circular(
+                                    MediaQuery.of(context).size.width * 0.3)),
+                              ),
+                              child: Icon(
+                                Icons.check,
+                                size: MediaQuery.of(context).size.width * 0.35,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        )
+                      : Container()
+                ],
               ),
             ),
           ),

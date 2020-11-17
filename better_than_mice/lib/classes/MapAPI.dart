@@ -1,5 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 class TurtleBotAPI {
@@ -7,19 +10,24 @@ class TurtleBotAPI {
   int portNumber;
   double resolution;
 
-  Future<bool> testConnection(String ipAddress, int portNumber) async {
-    this.ipAddress = ipAddress;
-    this.portNumber = portNumber;
+  TurtleBotAPI({@required this.ipAddress, this.portNumber});
 
+  Future<bool> testConnection() async {
     if (ipAddress == '' || portNumber == 0) {
       return false;
     }
 
-    var url = 'http://' + ipAddress + ':' + portNumber.toString();
-    var response = await http.get(url);
-    Map responseBody = jsonDecode(response.body);
-    if (responseBody['message'] == 'success') {
-      return true;
+    try {
+      final url = 'http://' + ipAddress + ':' + portNumber.toString();
+      final response = await http.get(url).timeout(const Duration(seconds: 4));
+      Map responseBody = jsonDecode(response.body);
+      if (responseBody['message'] == 'success') {
+        return true;
+      }
+    } on TimeoutException {
+      return false;
+    } on SocketException {
+      return false;
     }
     return false;
   }
