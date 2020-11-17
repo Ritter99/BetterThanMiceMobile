@@ -39,16 +39,22 @@ class TurtleBotAPI {
     Map responseBody = jsonDecode(response.body);
     List<int> map = [];
     if (responseBody['message'] != null) {
-      if (responseBody['message']['yaml'] != null &&
-          responseBody['message']['yaml']['resolution'] != null) {
-        this.resolution = responseBody['message']['yaml']['resolution'];
+      try {
+        List<dynamic> yaml = responseBody['message']['map']['yaml'];
+        for (int i = 0; i < yaml.length; i++) {
+          String line = responseBody['message']['map']['yaml'][i];
+          if (line.contains('resolution')) {
+            List<String> lineSplit = line.split(': ');
+            this.resolution = double.parse(lineSplit[1]);
+          }
+        }
+      } catch (err) {
+        print(err);
       }
 
-      for (int i = responseBody['message']['map']['pgm'].length - 1;
-          i > -1;
-          i--) {
+      for (int i = 0; i < responseBody['message']['map']['pgm'].length; i++) {
         List<dynamic> row = responseBody['message']['map']['pgm'][i];
-        for (int j = 0; j < row.length; j++) {
+        for (int j = row.length - 1; j > -1; j--) {
           int item = row[j];
           map.add(item);
         }
@@ -72,14 +78,13 @@ class TurtleBotAPI {
           responseBody['data']['y'] != null) {
         double responseX = responseBody['data']['x'];
         double responseY = responseBody['data']['y'];
-        objectToReturn['x'] = (responseX / this.resolution).round();
+        objectToReturn['x'] = (responseX / this.resolution).round() * -1;
         objectToReturn['y'] = (responseY / this.resolution).round();
       }
     } catch (err) {
       print('Error in MapAPI.getCurrentPosition():');
       print(err);
     }
-    print(objectToReturn);
     return objectToReturn;
   }
 

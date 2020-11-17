@@ -63,16 +63,21 @@ class MyHomePageState extends State<MyHomePage> {
   String ipAddress;
   int portNumber;
   TurtleBotAPI turtleBotAPI;
+  Timer mapTimer;
+  Timer positionTimer;
+  Timer connectionTimer;
 
   Future<void> testServer() async {
     if (turtleBotAPI != null) {
       bool success = await turtleBotAPI.testConnection();
       print('Server connected: $success');
-      setState(() {
-        serverConnectionState = (success)
-            ? ServerConnectionState.Connected
-            : ServerConnectionState.Disconnected;
-      });
+      if (mounted) {
+        setState(() {
+          serverConnectionState = (success)
+              ? ServerConnectionState.Connected
+              : ServerConnectionState.Disconnected;
+        });
+      }
     }
   }
 
@@ -80,31 +85,41 @@ class MyHomePageState extends State<MyHomePage> {
     try {
       ipAddress = await storage.read(key: 'ipAddress');
       portNumber = int.parse(await storage.read(key: 'portNumber'));
-      setState(() {
-        turtleBotAPI =
-            new TurtleBotAPI(ipAddress: ipAddress, portNumber: portNumber);
-        currentMappingState = MappingState.Start;
-      });
+      if (mounted) {
+        setState(() {
+          if (ipAddress != null && portNumber != null) {
+            turtleBotAPI =
+                new TurtleBotAPI(ipAddress: ipAddress, portNumber: portNumber);
+            currentMappingState = MappingState.Start;
+          }
+        });
+      }
     } catch (err) {
       print(err);
-      setState(() {
-        turtleBotAPI = null;
-        currentMappingState = MappingState.Disconnected;
-      });
+      if (mounted) {
+        setState(() {
+          turtleBotAPI = null;
+          currentMappingState = MappingState.Disconnected;
+        });
+      }
     }
   }
 
   void updateCoordinates(int newX, int newY) {
-    setState(() {
-      xPosition = newX;
-      yPosition = newY;
-    });
+    if (mounted) {
+      setState(() {
+        xPosition = newX;
+        yPosition = newY;
+      });
+    }
   }
 
   void setMappingState(MappingState newState) {
-    setState(() {
-      currentMappingState = newState;
-    });
+    if (mounted) {
+      setState(() {
+        currentMappingState = newState;
+      });
+    }
   }
 
   void updateBottomButtonList() {
@@ -183,9 +198,17 @@ class MyHomePageState extends State<MyHomePage> {
     super.initState();
   }
 
+  @override
+  void dispose() {
+    // mapTimer.cancel();
+    // connectionTimer.cancel();
+    // positionTimer.cancel();
+    super.dispose();
+  }
+
   void startCoordinatesTimer() {
     const oneSec = const Duration(seconds: 1);
-    new Timer.periodic(oneSec, (timer) async {
+    positionTimer = new Timer.periodic(oneSec, (timer) async {
       if (turtleBotAPI != null) {
         turtleBotAPI.getCurrentPosition().then((value) {
           updateCoordinates(value['x'], value['y']);
@@ -196,7 +219,7 @@ class MyHomePageState extends State<MyHomePage> {
 
   void startConnectionTimer() {
     const oneSec = const Duration(seconds: 5);
-    new Timer.periodic(oneSec, (timer) async {
+    connectionTimer = new Timer.periodic(oneSec, (timer) async {
       testServer();
     });
   }
@@ -218,12 +241,15 @@ class MyHomePageState extends State<MyHomePage> {
                     myHomePageState: widget.myHomePageState,
                   )
                 : MappingArea(
-                    mapAPI: turtleBotAPI,
+                    turtleBotAPI: turtleBotAPI,
                     xPosition: xPosition,
                     yPosition: yPosition,
                     currentMappingState: currentMappingState,
                     myHomePageState: widget.myHomePageState,
                     serverConnectionState: serverConnectionState,
+                    mapTimer: mapTimer,
+                    connectionTimer: connectionTimer,
+                    positionTimer: positionTimer,
                   ),
             BottomButtons(bottomButtonList: bottomButtonList),
           ],
@@ -283,20 +309,26 @@ class ConnectingScreen extends StatelessWidget {
 class MappingArea extends StatelessWidget {
   const MappingArea({
     Key key,
-    @required this.mapAPI,
+    @required this.turtleBotAPI,
     @required this.xPosition,
     @required this.yPosition,
     @required this.currentMappingState,
     @required this.myHomePageState,
     @required this.serverConnectionState,
+    @required this.mapTimer,
+    @required this.positionTimer,
+    @required this.connectionTimer,
   }) : super(key: key);
 
   final MyHomePageState myHomePageState;
-  final TurtleBotAPI mapAPI;
+  final TurtleBotAPI turtleBotAPI;
   final int xPosition;
   final int yPosition;
   final MappingState currentMappingState;
   final ServerConnectionState serverConnectionState;
+  final Timer mapTimer;
+  final Timer connectionTimer;
+  final Timer positionTimer;
 
   @override
   Widget build(BuildContext context) {
@@ -350,8 +382,17 @@ class MappingArea extends StatelessWidget {
                               Icons.computer,
                               color: Colors.black45,
                             ),
-                            onTap: () => myHomePageState
-                                .setMappingState(MappingState.Disconnected),
+                            onTap: () {
+                              if (positionTimer.isActive) {
+                                positionTimer.cancel();
+                              }
+                              if (connectionTimer.isActive) {
+                                connectionTimer.cancel();
+                              }
+                              turtleBotAPI.stopWallFollower();
+                              myHomePageState
+                                  .setMappingState(MappingState.Disconnected);
+                            },
                           ),
                         )
                       ],
@@ -401,9 +442,10 @@ class MappingArea extends StatelessWidget {
                 children: [
                   Center(
                     child: Map(
-                      turtleBotAPI: mapAPI,
+                      turtleBotAPI: turtleBotAPI,
                       currentX: xPosition,
                       currentY: yPosition,
+                      mapTimer: mapTimer,
                     ),
                   ),
                   (currentMappingState == MappingState.FinishedMapping)

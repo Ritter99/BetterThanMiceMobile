@@ -9,11 +9,13 @@ class Map extends StatefulWidget {
   final TurtleBotAPI turtleBotAPI;
   final int currentX;
   final int currentY;
+  final Timer mapTimer;
   Map({
     Key key,
     @required this.turtleBotAPI,
     @required this.currentX,
     @required this.currentY,
+    @required this.mapTimer,
   }) : super(key: key);
 
   @override
@@ -26,25 +28,33 @@ class _MapState extends State<Map> {
   Widget mapImage;
   int currentX;
   int currentY;
+  Timer mapTimer;
 
   @override
   void initState() {
     turtleBotAPI = widget.turtleBotAPI;
     currentX = widget.currentX;
     currentY = widget.currentY;
+    mapTimer = widget.mapTimer;
     startTimer();
     super.initState();
   }
 
+  @override
+  void dispose() {
+    mapTimer.cancel();
+    super.dispose();
+  }
+
   void startTimer() {
     const oneSec = const Duration(seconds: 2);
-    new Timer.periodic(oneSec, (timer) async {
+    mapTimer = new Timer.periodic(oneSec, (timer) async {
       turtleBotAPI.getMap().then((value) => updateGridState(value));
     });
   }
 
   void updateGridState(List<int> newGridState) {
-    print(newGridState);
+    // print(newGridState);
     if (newGridState.length > 0) {
       BMP332Header header = BMP332Header(
           sqrt(newGridState.length).round(), sqrt(newGridState.length).round());
@@ -68,11 +78,6 @@ class _MapState extends State<Map> {
     int _currentX = widget.currentX;
     int _currentY = widget.currentY;
 
-    _width = 384;
-    _height = 384;
-    // _currentX = -180;
-    // _currentY = 180;
-
     _currentX += (_width ~/ 2);
     _currentY += (_height ~/ 2);
     return ClipRRect(
@@ -87,14 +92,14 @@ class _MapState extends State<Map> {
               ),
             )
           : Container(
-              width: _width,
-              height: _height,
+              width: _width + 4,
+              height: _height + 4,
               child: Stack(
                 children: [
                   Center(
                     child: Container(
-                      width: _width,
-                      height: _height,
+                      width: _width + 4,
+                      height: _height + 4,
                       decoration: BoxDecoration(
                         color: Colors.grey[300],
                         borderRadius: BorderRadius.circular(20.0),
@@ -106,11 +111,20 @@ class _MapState extends State<Map> {
                     ),
                   ),
                   Center(
-                    child: (mapImage == null) ? Container() : mapImage,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.all(
+                        Radius.circular(20.0),
+                      ),
+                      child: Container(
+                        width: _width,
+                        height: _height,
+                        child: (mapImage == null) ? Container() : mapImage,
+                      ),
+                    ),
                   ),
                   Transform.translate(
                     offset: Offset(_currentX - (_turtleBotWidth / 2),
-                        _currentY - (_turtleBotWidth / 2)),
+                        _currentY - (_turtleBotWidth / 4)),
                     child: Image(
                       height: _turtleBotWidth,
                       image: AssetImage(
